@@ -149,6 +149,20 @@ async fn step_trampolined<K: Resource + Clone + DeserializeOwned + Debug + Send 
                 resource_version,
                 stream: stream.boxed(),
             }),
+            Err(kube_client::Error::Api(err)) => {
+                const TOO_LARGE_RESOURCE_MSG: &str = "Timeout: Too large resource version";
+
+                // TOO_LARGE_RESOURCE_MSG message, means we have desynced and need to start over and re-list :(
+                let new_state = if err.code == 504 && err.message.starts_with(TOO_LARGE_RESOURCE_MSG) {
+                    State::Empty
+                } else {
+                    State::InitListed { resource_version }
+                };
+                (
+                    Some(Err(Error::WatchStartFailed(kube_client::Error::Api(err)))),
+                    new_state,
+                )
+            },
             Err(err) => (
                 Some(Err(err).map_err(Error::WatchStartFailed)),
                 State::InitListed { resource_version },
